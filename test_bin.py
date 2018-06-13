@@ -158,7 +158,7 @@ def getROI(imagem, ar_l_limit = 8, ar_h_limit = 25, V_limit = 300):
 def getDigitsLoc(img, W_l_limit = 2, H_l_limit = 15):
 	sqr_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (8,8))
 	rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,5))
-	sqr_kernel_2 = cv2.getStructuringElement(cv2.MORPH_RECT, (2,5))
+	sqr_kernel_2 = cv2.getStructuringElement(cv2.MORPH_RECT, (2,4))
 
 	# Caarregar imagem
 	im = imutils.resize(img, width = 300)
@@ -182,6 +182,29 @@ def getDigitsLoc(img, W_l_limit = 2, H_l_limit = 15):
 	cv2.imshow('a', thresh)
 	cv2.waitKey(0)
 
+	sure_bg = cv2.dilate(thresh, rect_kernel, iterations=2)
+	cv2.imshow('a', sure_bg)
+	cv2.waitKey(0)
+
+	dist_transform = cv2.distanceTransform(thresh,cv2.DIST_L2,3)
+	_, sure_fg = cv2.threshold(dist_transform,0.6*dist_transform.max(),255,0)
+	cv2.imshow('a', sure_fg)
+	cv2.waitKey(0)
+
+	sure_fg = np.uint8(sure_fg)
+	unknown = cv2.subtract(sure_bg,sure_fg)
+	
+	_, markers = cv2.connectedComponents(sure_fg)
+
+	markers = markers + 1
+
+	markers[unknown==255] = 0
+	markers = cv2.watershed(im,markers)
+	im[markers == -1] = [255,0,0]
+
+	cv2.imshow('a', im)
+	cv2.waitKey(0)
+
 	# Acha todos os contornos dos blocos da imagem e os ordena da esquerda pra direita
 	conts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 	conts = conts[0] if imutils.is_cv2() else conts[1]
@@ -194,18 +217,19 @@ def getDigitsLoc(img, W_l_limit = 2, H_l_limit = 15):
 		(x, y, w, h) = cv2.boundingRect(contorno)
 		aspect_ratio = w/float(h)
 
-		in_limit = (aspect_ratio <= 1.7 and w >= W_l_limit) and h >= H_l_limit 
-		#in_limit = True
+		#in_limit = (aspect_ratio <= 1.7 and w >= W_l_limit) and h >= H_l_limit 
+		in_limit = True
 
 		if(in_limit):
 			cv2.rectangle(im, (x,y), (x+w,y+h), (255,0,0), 2)
 			locs.append((x,y,w,h))
 
-	cv2.imshow('a', im)
-	cv2.waitKey(0)
+	#cv2.imshow('a', im)
+	#cv2.waitKey(0)
 
 	return locs
 
+index = 2
 a_len = []
 for index in range(1,9):
 	file_name = 'cheque' + str(index) + '.jpg'
@@ -220,10 +244,7 @@ for index in range(1,9):
 		cropped_img = img[y-5:y+h+5, x-5:x+w+5]
 		a = getDigitsLoc(cropped_img)
 		img_ct.append(cropped_img)
-
 		a_len.append(len(a))
-
-print(a_len)
 
 
 
