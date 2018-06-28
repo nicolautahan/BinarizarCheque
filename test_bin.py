@@ -154,11 +154,48 @@ def getROI(imagem, ar_l_limit = 8, ar_h_limit = 25, V_limit = 300):
 
 	return locs
 
+def assign_to_nearest(img, centers):
+	centers_dict = {i : [] for i, _ in enumerate(centers)}
+	height, width = img.shape
 
-def getDigitsLoc(img, W_l_limit = 2, H_l_limit = 15):
+	for j in range(0,height):
+		for i in range(0, width):
+			if(img[j][i] != 0):
+
+				dist = 1000
+				index = 0
+				for k, center in enumerate(centers):
+					new_dist = np.power(i - center[0], 2) + np.power(j - center[1], 2)
+					if new_dist < dist:
+						dist = new_dist
+						index = k
+				centers_dict[index].append([i,j])
+
+	return centers_dict
+
+def update_centers(centers_dict):
+	indexes = centers_dict.keys()
+	new_centers = []
+
+	for index in indexes:
+		new_center_x = 0
+		new_center_y = 0
+
+		for pixel in centers_dict[index]:
+			new_center_x = new_center_x + pixel[0]
+			new_center_y = new_center_y + pixel[1]
+
+		new_center_x = int(new_center_x / len(centers_dict[index]))
+		new_center_y = int(new_center_y / len(centers_dict[index]))
+
+		new_centers.append([new_center_x, new_center_y])
+
+	return new_centers
+
+def kmeans(img, n_classes ,iterations= 3):
+
+	rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,4))
 	sqr_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (8,8))
-	rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,5))
-	sqr_kernel_2 = cv2.getStructuringElement(cv2.MORPH_RECT, (2,4))
 
 	# Caarregar imagem
 	im = imutils.resize(img, width = 300)
@@ -169,84 +206,48 @@ def getDigitsLoc(img, W_l_limit = 2, H_l_limit = 15):
 	# Faz uma op. morfologica Black Hat => acha coisas pretas em fundo claro
 	im_blackhat = cv2.morphologyEx(im_gray, cv2.MORPH_BLACKHAT, sqr_kernel)
 
-	cv2.imshow('a', im_blackhat)
-	cv2.waitKey(0)
-
 	# Fechamento - Binarização - Fechamento
 	#   Fecha os buracos fazendo com que os caracteres formem um bloco
-	#im_cont = cv2.morphologyEx(im_blackhat, cv2.MORPH_CLOSE, rect_kernel)
 	thresh = cv2.threshold(im_blackhat, 0, 255,
 		cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-	thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, sqr_kernel_2)
+	thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, rect_kernel)
 
-	cv2.imshow('a', thresh)
-	cv2.waitKey(0)
+	height, width = thresh.shape
+	digit_size = width/n_classes
+	center_y = height/2
+	center_xs = [(i + 0.5) * digit_size for i in range(0, n_classes)]
 
-	sure_bg = cv2.dilate(thresh, rect_kernel, iterations=2)
-	cv2.imshow('a', sure_bg)
-	cv2.waitKey(0)
+	centers = [[x, center_y] for x in center_xs]
 
-	dist_transform = cv2.distanceTransform(thresh,cv2.DIST_L2,3)
-	_, sure_fg = cv2.threshold(dist_transform,0.6*dist_transform.max(),255,0)
-	cv2.imshow('a', sure_fg)
-	cv2.waitKey(0)
+	for _ in range(0, iterations):
+		centers_dict = assign_to_nearest(thresh, centers)
 
-	sure_fg = np.uint8(sure_fg)
-	unknown = cv2.subtract(sure_bg,sure_fg)
-	
-	_, markers = cv2.connectedComponents(sure_fg)
+		centers = update_centers(centers_dict)
 
-	markers = markers + 1
+	return centers_dict
 
-	markers[unknown==255] = 0
-	markers = cv2.watershed(im,markers)
-	im[markers == -1] = [255,0,0]
 
-	cv2.imshow('a', im)
-	cv2.waitKey(0)
-
-	# Acha todos os contornos dos blocos da imagem e os ordena da esquerda pra direita
-	conts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-	conts = conts[0] if imutils.is_cv2() else conts[1]
-	conts = contours.sort_contours(conts, method="left-to-right")[0]
-	locs = []
-
-	for (i, contorno) in enumerate(conts):
-
-		# Feito o retangulo do contorno
-		(x, y, w, h) = cv2.boundingRect(contorno)
-		aspect_ratio = w/float(h)
-
-		#in_limit = (aspect_ratio <= 1.7 and w >= W_l_limit) and h >= H_l_limit 
-		in_limit = True
-
-		if(in_limit):
-			cv2.rectangle(im, (x,y), (x+w,y+h), (255,0,0), 2)
-			locs.append((x,y,w,h))
-
-	#cv2.imshow('a', im)
-	#cv2.waitKey(0)
-
-	return locs
-
-index = 2
-a_len = []
-for index in range(1,9):
-	file_name = 'cheque' + str(index) + '.jpg'
+for index in range(3,6):
+	file_name = '/Users/nicolautahan/Documents/GitHub/BinarizarCheque/cheque' + str(index) + '.jpg'
 	img = cv2.imread(file_name)
 	img = imutils.resize(img, width = 900)
 
 	c = getROI(img)
-	img_ct = []
+	num_digits = [10, 11, 13]
 
-	for (x,y,w,h) in c:
+	for (x,y,w,h), classes in zip(c, num_digits):
 		#cv2.rectangle(img, (x,y), (x+w,y+h), (255,0,0), 2)
 		cropped_img = img[y-5:y+h+5, x-5:x+w+5]
-		a = getDigitsLoc(cropped_img)
-		img_ct.append(cropped_img)
-		a_len.append(len(a))
+		cropped_img = imutils.resize(cropped_img, width = 300)
 
+		a = kmeans(cropped_img, classes, 5)
+		for index in a.keys():
+			vec = np.array(a[index])
+			x = min(vec[:,0])
+			cv2.rectangle(cropped_img, (x, 0), (x, 200), (255,0,0), 4) 
+		cv2.imshow('a', cropped_img)
+		cv2.waitKey(0)
 
-
+		
 
 
