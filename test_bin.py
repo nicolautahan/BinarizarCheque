@@ -229,6 +229,7 @@ def kmeans(img, n_classes ,iterations= 3):
 
 for index in range(3,6):
 	file_name = '/Users/nicolautahan/Documents/GitHub/BinarizarCheque/cheque' + str(index) + '.jpg'
+
 	img = cv2.imread(file_name)
 	img = imutils.resize(img, width = 900)
 
